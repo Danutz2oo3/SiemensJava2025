@@ -5,17 +5,23 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class ItemService {
+	
     @Autowired
     private ItemRepository itemRepository;
+    
     private static ExecutorService executor = Executors.newFixedThreadPool(10);
-    private List<Item> processedItems = new ArrayList<>();
-    private int processedCount = 0;
+    
+    private List<Item> processedItems = Collections.synchronizedList(new ArrayList<>()); //replaced normal list with a thread-safe version
+    
+    private AtomicInteger processedCount = new AtomicInteger(0);//used AtomicInteger instead of int -> thread-safe
 
 
     public List<Item> findAll() {
@@ -57,27 +63,45 @@ public class ItemService {
     public List<Item> processItemsAsync() {
 
         List<Long> itemIds = itemRepository.findAllIds();
-
+        
+        List<Future<?>> futures = new ArrayList<>();
+        
         for (Long id : itemIds) {
-            CompletableFuture.runAsync(() -> {
+            Future<?> future = executor.submit(() -> {
                 try {
                     Thread.sleep(100);
 
-                    Item item = itemRepository.findById(id).orElse(null);
-                    if (item == null) {
+                    //Item item = itemRepository.findById(id).orElse(null);
+                    Optional<Item> optionalItem = itemRepository.findById(id);
+                    if (optionalItem.isEmpty()) {
                         return;
                     }
 
-                    processedCount++;
-
+                    Item item = optionalItem.get();
+                    
                     item.setStatus("PROCESSED");
+                    
                     itemRepository.save(item);
+                    
                     processedItems.add(item);
+                    
+                    processedCount.incrementAndGet();
 
                 } catch (InterruptedException e) {
                     System.out.println("Error: " + e.getMessage());
                 }
-            }, executor);
+            });
+            
+            futures.add(future);
+        }
+
+        for (Future<?> future : futures) {
+            try {
+                future.get(); // blocks until task is done
+            } catch (InterruptedException | ExecutionException e) {
+                // Log the failure of that specific task
+                System.out.println("Error in task: " + e.getMessage());
+            }
         }
 
         return processedItems;
