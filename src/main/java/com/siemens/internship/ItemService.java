@@ -19,11 +19,14 @@ public class ItemService {
     
     private static ExecutorService executor = Executors.newFixedThreadPool(10);
     
-    private List<Item> processedItems = Collections.synchronizedList(new ArrayList<>()); //replaced normal list with a thread-safe version
+    // Thread-safe list to store processed items
+    private List<Item> processedItems = Collections.synchronizedList(new ArrayList<>()); 
     
+ // Thread-safe counter to track the number of processed items
     private AtomicInteger processedCount = new AtomicInteger(0);//used AtomicInteger instead of int -> thread-safe
 
 
+    // CRUD methods
     public List<Item> findAll() {
         return itemRepository.findAll();
     }
@@ -60,23 +63,27 @@ public class ItemService {
      * Consider the interaction between Spring's @Async and CompletableFuture
      */
     @Async
-    public List<Item> processItemsAsync() {
-
+    public CompletableFuture<List<Item>> processItemsAsync() {
+    	
+    	// Fetch IDs of all items from the repository
         List<Long> itemIds = itemRepository.findAllIds();
         
+        // Store submitted task futures for tracking and waiting
         List<Future<?>> futures = new ArrayList<>();
         
+        // Process each item asynchronously using executor threads
         for (Long id : itemIds) {
             Future<?> future = executor.submit(() -> {
                 try {
                     Thread.sleep(100);
 
-                    //Item item = itemRepository.findById(id).orElse(null);
+                    // Attempt to fetch item by ID
                     Optional<Item> optionalItem = itemRepository.findById(id);
                     if (optionalItem.isEmpty()) {
-                        return;
+                        return; // Skip if not found
                     }
-
+                    
+                    // Update item status and save
                     Item item = optionalItem.get();
                     
                     item.setStatus("PROCESSED");
@@ -85,7 +92,7 @@ public class ItemService {
                     
                     processedItems.add(item);
                     
-                    processedCount.incrementAndGet();
+                    processedCount.incrementAndGet(); // modified incremental method to suit the AtomicInteger type
 
                 } catch (InterruptedException e) {
                     System.out.println("Error: " + e.getMessage());
@@ -94,18 +101,18 @@ public class ItemService {
             
             futures.add(future);
         }
-
+        
+        // Wait for all submitted tasks to complete
         for (Future<?> future : futures) {
             try {
                 future.get(); // blocks until task is done
             } catch (InterruptedException | ExecutionException e) {
-                // Log the failure of that specific task
                 System.out.println("Error in task: " + e.getMessage());
             }
         }
-
-        return processedItems;
+        // Return the result wrapped in a completed CompletableFuture
+        return CompletableFuture.completedFuture(processedItems);
     }
-
+    
 }
 

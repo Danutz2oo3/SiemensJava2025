@@ -20,11 +20,21 @@ public class Item {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
+    
+    @NotBlank(message = "Name is required") // Validation added
     private String name;
+    
     private String description;
+    
+    @NotBlank(message = "Status is required") // Validation added
     private String status;
 
-    @Email(message = "Invalid email format")
+    @Email(message = "Invalid email format") // Validation added
     @NotBlank(message = "Email is required")
     private String email;
+    
+    /**
+     * Represents a persistable item with name, status, and contact email.
+     * Used in the CRUD operations and processed asynchronously in batch mode.
+     */
 }
